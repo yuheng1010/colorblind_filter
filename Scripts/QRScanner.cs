@@ -1,5 +1,4 @@
-﻿//這是新的
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.UI;
 using ZXing;
 using ZXing.QrCode;
@@ -7,6 +6,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System;
 using UnityEditor;
+using UnityEngine.Networking;
 
 
 public class QRScanner : MonoBehaviour
@@ -15,20 +15,21 @@ public class QRScanner : MonoBehaviour
     private WebCamTexture backCam;
     private WebCamTexture frontCam;
     private Texture defaultBackground;
-    //private Rect screenRect;
+    private Rect screenRect;
 
     private string type = "";
     private string level = "";
+    private string colorrr = "";
+    private string colorName = "";
     // private string qrcodeId = "";
-
+    //private bool isColorIng = false; // 控制有沒有在變色
 
     public RawImage background;
     public AspectRatioFitter fit;
 
-    // Use this for initialization
     private void Start()
     {
-        
+
         defaultBackground = background.texture;
         backCam = new WebCamTexture();
         backCam.requestedHeight = Screen.height;
@@ -38,31 +39,56 @@ public class QRScanner : MonoBehaviour
             backCam.Play();
             background.texture = backCam;
             camAvailable = true;
-        }
-        //WebCamDevice[] devices = WebCamTexture.devices;
-        //if (devices.Length == 0)
-        //{
-        //    Debug.Log("No camera detected");
-        //    camAvailable = false;
-        //    return;
-        //}
-        //for (int i = 0; i < devices.Length; i++)
-        //{
 
-        //    // if (!devices [i].isFrontFacing) {    //開啟後鏡頭
-        //    if (devices[i].isFrontFacing)
-        //    {    //開啟前鏡頭
-        //        backCam = new WebCamTexture(devices[i].name, Screen.width, Screen.height);
-        //    }
-        //}
-        //if (backCam == null)
-        //{
-        //    Debug.Log("Unable to find back camera");
-        //    return;
-        //}
-        //backCam.Play();
-        //background.texture = backCam;
-        //camAvailable = true;
+            StartCoroutine(colorEveryFiveSeconds());
+        }
+
+    }
+    private IEnumerator colorEveryFiveSeconds()
+    {
+        while (true) // 無限循環
+        {
+            yield return new WaitForSeconds(5f); // 等待五秒
+
+            if (camAvailable)
+            {
+                int centerX = backCam.width / 2;
+                int centerY = backCam.height / 2;
+
+                Color32 centerColor = backCam.GetPixel(centerX, centerY);
+                colorrr = "中間顏色 R: " + centerColor.r + ", G: " + centerColor.g + ", B: " + centerColor.b;
+                Debug.Log("中間顏色 R: " + centerColor.r + ", G: " + centerColor.g + ", B: " + centerColor.b);
+
+                string rgbString = $"rgb({centerColor.r},{centerColor.g},{centerColor.b})";
+
+                StartCoroutine(GetColorInfoFromAPI(rgbString));
+
+
+            }
+        }
+    }
+
+    private IEnumerator GetColorInfoFromAPI(string rgbString)
+    {
+        string apiUrl = $"https://www.thecolorapi.com/id?rgb={rgbString}";
+
+        UnityWebRequest request = UnityWebRequest.Get(apiUrl);
+
+        yield return request.SendWebRequest();
+
+        if (!request.isNetworkError && !request.isHttpError)
+        {
+            string responseText = request.downloadHandler.text;
+
+            // Parse JSON response using Unity's JSON utility
+            ColorApiResponse colorInfo = JsonUtility.FromJson<ColorApiResponse>(responseText);
+            colorName = colorInfo.name.value;
+            Debug.Log($"Color Name: {colorName}");
+        }
+        else
+        {
+            Debug.LogWarning($"API request failed: {request.error}");
+        }
     }
 
     // Update is called once per frame
@@ -126,8 +152,6 @@ public class QRScanner : MonoBehaviour
 
                 UnityEngine.Debug.Log("色盲型態 : " + type + " " + level);
 
-
-
             }
 
         }
@@ -151,49 +175,45 @@ public class QRScanner : MonoBehaviour
             factor = 1.15;
         }
 
-        // 取每個pixel
-        UnityEngine.Debug.Log("factor" + factor);
-        // EditorUtility.DisplayDialog ("Title here", "Your text", "Ok");
 
-            for (int y = 0; y < height; y++)
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
             {
-                for (int x = 0; x < width; x++)
+                int index = y * width + x;
+
+                Color32 pixelColor = pixelData[index];
+
+                int r = pixelColor.r;
+                int g = pixelColor.g;
+                int b = pixelColor.b;
+
+                if (type == "protanomalous")
                 {
-                    int index = y * width + x;
-
-                    Color32 pixelColor = pixelData[index];
-
-                    int r = pixelColor.r;
-                    int g = pixelColor.g;
-                    int b = pixelColor.b;
-
-                    if (type == "protanomalous")
-                    {
-                        r = (int)Mathf.Min(255, pixelColor.r * (float)factor);
-                        g = (int)Mathf.Min(255, pixelColor.g);
-                        b = (int)Mathf.Min(255, pixelColor.b * (float)factor);
-
-                    }
-                    else if (type == "deuteranomalous")
-                    {
-                        r = (int)Mathf.Min(255, pixelColor.r);
-                        g = (int)Mathf.Min(255, pixelColor.g * (float)factor);
-                        b = (int)Mathf.Min(255, pixelColor.b * (float)factor);
-                    }
-
-                    // 創建新的像素顏色
-                    Color32 newColor = new Color32((byte)r, (byte)g, (byte)b, pixelColor.a);
-                    texture.SetPixel(x, y, newColor);
-
-                    // 輸出 RGB 值
-                    // if (x < 5 && y < 5)
-                    // {
-                    //Debug.Log("old Pixel (" + x + ", " + y + ") - R: " + pixelColor.r + ", G: " + pixelColor.g + ", B: " + pixelColor.b);
-                    //Debug.Log("new Pixel (" + x + ", " + y + ") - R: " + r + ", G: " + g + ", B: " + b);
-                    // }
+                    r = (int)Mathf.Min(255, pixelColor.r * (float)factor);
+                    g = (int)Mathf.Min(255, pixelColor.g);
+                    b = (int)Mathf.Min(255, pixelColor.b * (float)factor);
 
                 }
+                else if (type == "deuteranomalous")
+                {
+                    r = (int)Mathf.Min(255, pixelColor.r);
+                    g = (int)Mathf.Min(255, pixelColor.g * (float)factor);
+                    b = (int)Mathf.Min(255, pixelColor.b * (float)factor);
+                }
+                else if (type == "tritanomalous")
+                {
+                    r = (int)Mathf.Min(255, pixelColor.r * (float)factor);
+                    g = (int)Mathf.Min(255, pixelColor.g * (float)factor);
+                    b = (int)Mathf.Min(255, pixelColor.b);
+                }
+
+                // 創建新的像素顏色
+                Color32 newColor = new Color32((byte)r, (byte)g, (byte)b, pixelColor.a);
+                texture.SetPixel(x, y, newColor);
+
             }
+        }
 
 
         // 更新Texture2D套到背景的texture
@@ -204,25 +224,38 @@ public class QRScanner : MonoBehaviour
         fit.aspectRatio = ratio;
 
         float scaleY = backCam.videoVerticallyMirrored ? -1f : 1f;
-        // background.rectTransform.localScale = new Vector3 (1f, scaleY, 1f);    //非鏡像
-        background.rectTransform.localScale = new Vector3(-1f, scaleY, 1f);    //鏡像
+        background.rectTransform.localScale = new Vector3(1f, scaleY, 1f);    //非鏡像
+        //background.rectTransform.localScale = new Vector3(-1f, scaleY, 1f);    //鏡像
 
         int orient = -backCam.videoRotationAngle;
         background.rectTransform.localEulerAngles = new Vector3(0, 0, orient);
 
-        //screenRect = new Rect(0, 0, Screen.width, Screen.height);
-        
-        //int w = Screen.width, h = Screen.height;
-        //GUIStyle style = new GUIStyle();
- 
-        //style.alignment = TextAnchor.UpperLeft;
-        //style.fontSize = h * 2 / 50;
-        //style.normal.textColor = new Color(0.0f, 0.0f, 0.5f, 1.0f);
-        //string text = type + " " + level;
-        //GUI.Label(screenRect, text, style);
+
+        //這邊開始是雙螢幕設定 感覺要拔掉變成全螢幕
+        screenRect = new Rect(0, 0, Screen.width, Screen.height);
+
+        int w = Screen.width, h = Screen.height;
+        GUIStyle style = new GUIStyle();
+
+        style.alignment = TextAnchor.UpperLeft;
+        style.fontSize = h * 2 / 50;
+        style.normal.textColor = new Color(0.0f, 0.0f, 0.5f, 1.0f);
+        string text = type + " " + level + "\n" + colorrr +"  "+ colorName;
+        GUI.Label(screenRect, text, style);
 
 
 
     }
 }
 
+[Serializable]
+public class ColorApiResponse
+{
+    public ColorName name;
+}
+
+[Serializable]
+public class ColorName
+{
+    public string value;
+}
